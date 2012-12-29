@@ -57,7 +57,7 @@ def list_vaults():
 
 @app.cmd(help="Upload a file")
 @app.cmd_arg('-f', '--filename')
-@app.cmd_arg('-v', '--vault', help="Glacier vault")
+@app.cmd_arg('-v', '--vault', required=True, help="Glacier vault")
 def upload(filename, vault):
     description = os.path.basename(filename)
     glacier_backend = GlacierBackend(vault)
@@ -68,9 +68,9 @@ def upload(filename, vault):
 
 @app.cmd(help="Retrieve Glacier inventory")
 @app.cmd_arg('-j', '--jobid', type=str, default=None, help="inventory job id")
-@app.cmd_arg('-v', '--vault', help="Glacier vault")
+@app.cmd_arg('-v', '--vault', required=True, help="Glacier vault")
 def retrieve_inventory(vault, jobid=None):
-    glacier_backend = GlacierBackend(vault_name)
+    glacier_backend = GlacierBackend(vault)
     job = glacier_backend.retrieve_inventory(jobid)
     if jobid is not None:
         print json.dumps(job.get_output())
@@ -79,9 +79,9 @@ def retrieve_inventory(vault, jobid=None):
 @app.cmd(help="Retrieve Glacier archive")
 @app.cmd_arg('archiveid', help="archive id")
 @app.cmd_arg('-j', '--jobid', type=str, default=None, help="archive retrieval job id")
-@app.cmd_arg('-v', '--vault', help="Glacier vault")
+@app.cmd_arg('-v', '--vault', required=True, help="Glacier vault")
 def retrieve_archive(archiveid, vault, jobid=None):
-    glacier_backend = GlacierBackend(vault_name)
+    glacier_backend = GlacierBackend(vault)
     job = glacier_backend.retrieve_archive(archiveid, jobid)
     if jobid is not None:
         cd = ConcurrentDownloader(job, part_size=4194304, num_threads=8)
