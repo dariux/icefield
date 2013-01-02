@@ -9,6 +9,7 @@ import boto
 from boto.glacier.concurrent import ConcurrentDownloader
 import aaargh
 
+ICEFIELD_DOMAIN = 'icefield-domain'
 
 app = aaargh.App(description="Manage backups with Amazon Glacier")
 
@@ -17,14 +18,25 @@ if not log.handlers:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 
-class GlacierBackend:
+class SimpleDB(object):
+    """
+    Class for managing Glacier vault and archive metadata
+    """
+    def __init__(self):
+        self.connection = boto.connect_sdb()
+        self.domain = self.connection.create_domain(ICEFIELD_DOMAIN)
+    
+    def add_archive(self, archiveid, description, vault):
+        attributes = {'ArchiveDescription': description, 'Vault':vault, 'Timestamp': '000'}
+        self.domain.put_attributes(archiveid, attributes)
+
+class GlacierBackend(object):
     """
     Backend to handle Glacier upload/download
     """
     def __init__(self, vault_name):
         con = boto.connect_glacier()
         self.vault = con.create_vault(vault_name)
-        self.container = "Glacier vault: {}".format(vault_name)
 
     def upload(self, filename, description=None):
         if description is None:
@@ -36,7 +48,7 @@ class GlacierBackend:
         Initiate a job to retrieve Galcier inventory or output inventory
         """
         if jobid is None:
-            return self.vault.retrieve_inventory(sns_topic=None, description="Bakthat inventory job")
+            return self.vault.retrieve_inventory(sns_topic=None, description="Icefield inventory job")
         else:
             return self.vault.get_job(jobid)
 
