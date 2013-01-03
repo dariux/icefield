@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import datetime
+import datetime
 import logging
 import json
 import time
@@ -26,9 +26,21 @@ class SimpleDB(object):
         self.connection = boto.connect_sdb()
         self.domain = self.connection.create_domain(ICEFIELD_DOMAIN)
     
-    def add_archive(self, archiveid, description, vault):
-        attributes = {'ArchiveDescription': description, 'Vault':vault, 'Timestamp': '000'}
+    def add_archive(self, archiveid, description, size, vault, creationdate=None):
+        if creationdate is None:
+            creationdate = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+        attributes = {'ArchiveDescription': description, 'Vault':vault, 
+                      'Size': size, 'CreationDate': creationdate}
         self.domain.put_attributes(archiveid, attributes)
+
+    def list_archives(self, vault=None):
+        if vault is None:
+            query = 'SELECT * FROM `{}`'.format(ICEFIELD_DOMAIN)
+        else:
+            query = 'SELECT * FROM `{}` WHERE Vault="{}"'.format(ICEFIELD_DOMAIN, vault)
+        result = self.domain.select(query, next_token=None, consistent_read=False, max_items=None)
+        r = [dict([('ArchiveId', a.name)]+a.items()) for a in result]
+        return json.dumps(r, sort_keys=True, indent=4)
 
 class GlacierBackend(object):
     """
@@ -42,6 +54,7 @@ class GlacierBackend(object):
         if description is None:
             description = os.path.basename(filename)
         archive_id = self.vault.concurrent_create_archive_from_file(filename, description)
+        return archive_id
 
     def retrieve_inventory(self, jobid):
         """
@@ -67,16 +80,29 @@ def list_vaults():
     connection = boto.connect_glacier()
     print('\n'.join([vault.name for vault in connection.list_vaults()]))
 
+@app.cmd(help="List archives in SimpleDB inventory")
+@app.cmd_arg('-v', '--vault', help="Glacier vault")
+def list_archives(vault=None):
+    sdb = SimpleDB()
+    print sdb.list_archives(vault)
+
 @app.cmd(help="Upload a file")
-@app.cmd_arg('-f', '--filename')
+@app.cmd_arg('-f', '--filename', required=True)
 @app.cmd_arg('-v', '--vault', required=True, help="Glacier vault")
 def upload(filename, vault):
     description = os.path.basename(filename)
     glacier_backend = GlacierBackend(vault)
     log.info("Uploading {} to vault {}".format(filename, vault))
     start = time.time()
-    glacier_backend.upload(filename, description)
-    log.info("Finished uploading {} to vault {} ({} secs)".format(filename, vault, time.time()-start))
+    archive_id = glacier_backend.upload(filename, description)
+    log.info("Finished uploading {} to vault {} ({:.0f} secs)".format(filename, vault, time.time()-start))
+    
+    # Update inventory
+    size = os.path.getsize(filename)
+    sdb = SimpleDB()
+    sdb.add_archive(archive_id, description, size, vault)
+    log.info("Updated inventory on SimpleDB")
+    
 
 @app.cmd(help="Retrieve Glacier inventory")
 @app.cmd_arg('-j', '--jobid', type=str, default=None, help="inventory job id")
