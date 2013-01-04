@@ -40,7 +40,8 @@ class SimpleDB(object):
             query = 'SELECT * FROM `{}` WHERE Vault="{}"'.format(ICEFIELD_DOMAIN, vault)
         result = self.domain.select(query, next_token=None, consistent_read=False, max_items=None)
         r = [dict([('ArchiveId', a.name)]+a.items()) for a in result]
-        return json.dumps(r, sort_keys=True, indent=4)
+        return r
+
 
 class GlacierBackend(object):
     """
@@ -84,7 +85,8 @@ def list_vaults():
 @app.cmd_arg('-v', '--vault', help="Glacier vault")
 def list_archives(vault=None):
     sdb = SimpleDB()
-    print sdb.list_archives(vault)
+    r = sdb.list_archives(vault)
+    print json.dumps(r, sort_keys=True, indent=4)
 
 @app.cmd(help="Upload a file")
 @app.cmd_arg('-f', '--filename', required=True)
@@ -122,8 +124,16 @@ def retrieve_archive(archiveid, vault, jobid=None):
     glacier_backend = GlacierBackend(vault)
     job = glacier_backend.retrieve_archive(archiveid, jobid)
     if jobid is not None:
+        sdb = SimpleDB()
+        r = sdb.list_archives(vault)
+        try:
+            filename = [a['ArchiveDescription'] for a in r if a['ArchiveId'] == archiveid][0]
+        except:
+            log.warning("Archive not found in SimpleDB inventory")
+            filename = archiveid[:8]+'.out'
+        log.info("Output filename is {}".format(filename))
         cd = ConcurrentDownloader(job, part_size=4194304, num_threads=8)
-        cd.download(archiveid[:8]+'.out')
+        cd.download(filename)
 
 
 def main():
